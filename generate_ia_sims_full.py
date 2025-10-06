@@ -11,7 +11,7 @@ from parallelbar import progress_starmap
 from tqdm import tqdm
 from time import time
 
-def generate_images(i, nn, scale, galaxies, records, psf, n_rot, stamp_size):
+def generate_images(i, nn, scale, galaxies, records, psf, n_rot, stamp_size, random=True):
     gal = galaxies[i]
 
     # rescale flux to match LSST
@@ -34,8 +34,10 @@ def generate_images(i, nn, scale, galaxies, records, psf, n_rot, stamp_size):
         phi = np.radians(0),
         clip_radius=5 # clip the transform at 5*hlr to prevent edge effects
     )
-
-    rotated_gals = cancel_shape_noise(gal, n_rot)
+    if random:
+        rotated_gals = random_rotate(gal, n_rot)
+    else:
+        rotated_gals = cancel_shape_noise(gal, n_rot)
     stamp = galsim.ImageF(stamp_size, stamp_size, scale=scale)
     for j in range(n_rot):
         # set drawing location on image
@@ -100,19 +102,25 @@ def main(args):
     ids = records['IDENT']
 
     # Calculate the number of rotated galaxies
-    n_rot = 4
-    ng_eff = n_rot*n_gals
+    n_rot = 10
+    if n_rot==0:
+        ng_eff = n_gals
+    else:
+        ng_eff = n_rot*n_gals
 
     print(f'Generating {n_gals} images with {n_rot} rotations per image, {nn}x{nn} pixels, scale {scale} arcsec/pixel')
 
     # Total size of stamp for 4 galaxies
-    stamp_size = int(nn * np.sqrt(n_rot))
+    if n_rot ==0:
+        stamp_size = int(nn)# * np.sqrt(n_rot))
+    else:
+        stamp_size = int(nn * np.sqrt(n_rot))
 
     # Ensure save directory exists
     os.makedirs(save_dir, exist_ok=True)
 
     # Create fits file to save images
-    fits = fitsio.FITS(os.path.join(save_dir, f'COSMOS_ngals={n_gals}_noiseless.fits'), 'rw', clobber=True)
+    fits = fitsio.FITS(os.path.join(save_dir, f'COSMOS_ngals={n_gals}_noisy.fits'), 'rw', clobber=True)
     
     if batch_process == 'True':
         print('Batch processing images')
@@ -164,6 +172,15 @@ def cancel_shape_noise(gal_obj, nrot):
         
     return rotated_gals
 
+def random_rotate(gal_obj, nrot):
+    '''Create nrot randomly rotated versions of the input galaxy object'''
+    rotated_gals = []
+    rot_ang = np.pi * np.random.rand(nrot)
+    for i in range(nrot):
+        ang = rot_ang[i] * galsim.radians
+        rotated_gals.append(gal_obj.rotate(ang))
+    
+    return rotated_gals
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Generate noiseless LSST-like images from COSMOS galaxies')
